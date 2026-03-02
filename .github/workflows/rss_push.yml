@@ -39,5 +39,8 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add last_seen.json
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update last seen state" && git push)
+          git add last_seen.json || true
+          # 변경사항이 있을 때만 커밋
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update last seen status"
+          # 토큰을 직접 사용하여 강제 푸시
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
