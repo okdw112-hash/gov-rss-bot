@@ -1,17 +1,12 @@
 import os
 import json
-import time
 import datetime
 import feedparser
 import requests
-from dotenv import load_dotenv
 
-# .env 파일 로드
-load_dotenv()
-
-# 설정
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# 설정 (GitHub Secrets에서 가져옴)
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 STATE_FILE = "last_seen.json"
 
 RSS_FEEDS = {
@@ -32,9 +27,9 @@ def save_state(state):
 
 def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram configuration is missing.")
+        print("❌ Telegram configuration is missing.")
         return
-    
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -45,63 +40,69 @@ def send_telegram_message(text):
         response = requests.post(url, json=payload)
         response.raise_for_status()
     except Exception as e:
-        print(f"Error sending telegram message: {e}")
+        print(f"❌ Error sending telegram message: {e}")
+
+def is_work_time():
+    # GitHub Actions의 서버 시간(UTC)을 한국 시간(KST, UTC+9)으로 변환
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    now_kst = now_utc + datetime.timedelta(hours=9)
+    
+    # 요일 체크 (0=월, ..., 4=금)
+    if now_kst.weekday() >= 5:
+        print(f"[{now_kst}] 주말입니다. 건너뜁니다.")
+        return False
+
+    # 시간 체크 (08:00 ~ 19:00)
+    current_hour = now_kst.hour
+    print(f"현재 한국 시간: {now_kst}")
+    
+    if 8 <= current_hour < 19:
+        return True
+
+    print("영업 시간(08-19시) 외 시간입니다. 건너뜁니다.")
+    return False
 
 def check_rss():
     state = load_state()
     new_state = state.copy()
-    
+    found_any_new = False
+
     for name, url in RSS_FEEDS.items():
         print(f"Checking {name} RSS...")
         try:
             feed = feedparser.parse(url)
             last_link = state.get(name)
-            
-            # 피드에서 새로운 항목들 찾기 (위에서 아래로 최신순인 경우)
+
             new_entries = []
             for entry in feed.entries:
                 if entry.link == last_link:
                     break
                 new_entries.append(entry)
-            
-            # 최근 항목이 하나라도 있으면 업데이트
+
             if feed.entries:
                 new_state[name] = feed.entries[0].link
-            
-            # 새로운 항목이 있으면 텔레그램으로 전송 (오래된 것부터)
+
             for entry in reversed(new_entries):
                 message = f"<b>[{name} 보도자료]</b>\n\n{entry.title}\n\n<a href='{entry.link}'>바로가기</a>"
                 send_telegram_message(message)
-                print(f"Sent: {entry.title}")
-                
+                print(f"✅ Sent: {entry.title}")
+                found_any_new = True
+
         except Exception as e:
-            print(f"Error parsing {name} RSS: {e}")
-            
+            print(f"❌ Error parsing {name} RSS: {e}")
+
+    if not found_any_new:
+        print("최신 보도자료가 없습니다. 텔레그램을 보내지 않습니다.")
+    
     save_state(new_state)
 
-def is_work_time():
-    now = datetime.datetime.now()
-    # 요일 체크 (0=월, 1=화, ..., 4=금, 5=토, 6=일)
-    if now.weekday() >= 5:
-        return False
-    
-    # 시간 체크 (08:00 ~ 19:00)
-    current_hour = now.hour
-    if 8 <= current_hour < 19:
-        return True
-    
-    return False
-
 def main():
-    print("RSS Pusher Agent started for GitHub Actions.")
-    
-    # 작업 시간 체크 (평일 08:00 ~ 19:00)
-    # GitHub Actions의 Cron은 UTC 기준이므로 코드 내에서 현지 시간(KST) 체크가 안전함
+    print("🚀 RSS Pusher Agent started.")
+
     if not is_work_time():
-        print(f"[{datetime.datetime.now()}] Outside working hours. Skipping check.")
         return
 
-    # 첫 실행 시 현재 상태를 저장
+    # 첫 실행 시 초기화 로직
     if not os.path.exists(STATE_FILE):
         print("Initializing state file...")
         state = {}
@@ -111,12 +112,12 @@ def main():
                 if feed.entries:
                     state[name] = feed.entries[0].link
             except Exception as e:
-                print(f"Error initializing {name}: {e}")
+                print(f"Error: {e}")
         save_state(state)
-        print("State initialized. Monitoring will start from next run.")
+        # 테스트를 위해 초기화 시점에 메시지 하나 발송
+        send_telegram_message("✅ RSS 알림 비서가 정상적으로 활성화되었습니다.")
         return
 
-    print(f"[{datetime.datetime.now()}] Checking feeds...")
     check_rss()
 
 if __name__ == "__main__":
