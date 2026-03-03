@@ -41,26 +41,16 @@ def send_telegram_message(text):
         response.raise_for_status()
     except Exception as e:
         print(f"❌ Error sending telegram message: {e}")
-
+    
 def is_work_time():
-    # GitHub Actions의 서버 시간(UTC)을 한국 시간(KST, UTC+9)으로 변환
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    now_kst = now_utc + datetime.timedelta(hours=9)
+    # 깃허브 서버의 현재 시간을 그대로 출력해서 로그로 확인합니다.
+    now = datetime.datetime.now()
+    print(f"DEBUG: 현재 서버 시간: {now}")
     
-    # 요일 체크 (0=월, ..., 4=금)
-    if now_kst.weekday() >= 5:
-        print(f"[{now_kst}] 주말입니다. 건너뜁니다.")
-        return False
+    # 지금은 테스트 단계이므로 요일/시간 따지지 않고 무조건 True를 반환합니다.
+    # 나중에 자동화가 안정되면 그때 다시 시간을 제한해도 늦지 않습니다.
+    return True 
 
-    # 시간 체크 (08:00 ~ 19:00)
-    current_hour = now_kst.hour
-    print(f"현재 한국 시간: {now_kst}")
-    
-    if 8 <= current_hour < 19:
-        return True
-
-    print("영업 시간(08-19시) 외 시간입니다. 건너뜁니다.")
-    return False
 
 def check_rss():
     state = load_state()
